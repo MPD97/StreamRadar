@@ -25,7 +25,7 @@ class SQLiteDatabase(IStreamRepository):
             await self._create_tables()
             self.logger.info("Database initialized successfully")
         except Exception as e:
-            self.logger.error(f"Error initializing database: {e}")
+            self.logger.error(f"[DatabaseService] Error initializing database: {e}")
             raise
 
     async def close(self) -> None:
@@ -35,7 +35,7 @@ class SQLiteDatabase(IStreamRepository):
                 await self._db.close()
                 self.logger.info("Database connection closed")
             except Exception as e:
-                self.logger.error(f"Error closing database: {e}")
+                self.logger.error(f"[DatabaseService] Error closing database: {e}")
                 raise
 
     async def execute(self, query: str, params: tuple = None) -> Any:
@@ -46,7 +46,7 @@ class SQLiteDatabase(IStreamRepository):
                 await self._db.commit()
                 return cursor.rowcount
         except Exception as e:
-            self.logger.error(f"Query execution error: {e}")
+            self.logger.error(f"[DatabaseService] Query execution error: {e}")
             raise
 
     async def fetch_one(self, query: str, params: tuple = None) -> Optional[Dict[str, Any]]:
@@ -57,7 +57,7 @@ class SQLiteDatabase(IStreamRepository):
                 await cursor.execute(query, params or ())
                 return await cursor.fetchone()
         except Exception as e:
-            self.logger.error(f"Fetch one error: {e}")
+            self.logger.error(f"[DatabaseService] Fetch one error: {e}")
             raise
 
     async def fetch_all(self, query: str, params: tuple = None) -> List[Dict[str, Any]]:
@@ -68,7 +68,7 @@ class SQLiteDatabase(IStreamRepository):
                 await cursor.execute(query, params or ())
                 return await cursor.fetchall()
         except Exception as e:
-            self.logger.error(f"Fetch all error: {e}")
+            self.logger.error(f"[DatabaseService] Fetch all error: {e}")
             raise
 
     async def transaction(self):
@@ -111,7 +111,7 @@ class SQLiteDatabase(IStreamRepository):
 
                 await self._db.commit()
         except Exception as e:
-            self.logger.error(f"Error creating tables: {e}")
+            self.logger.error(f"[DatabaseService] Error creating tables: {e}")
             raise
 
     @staticmethod
@@ -136,7 +136,7 @@ class SQLiteDatabase(IStreamRepository):
                 await self._db.commit()
                 return True
         except Exception as e:
-            self.logger.error(f"Error saving configuration: {e}")
+            self.logger.error(f"[DatabaseService] Error saving configuration: {e}")
             return False
 
     async def get(self, guild_id: int, platform: str, username: str) -> Optional[Dict[str, Any]]:
@@ -154,7 +154,7 @@ class SQLiteDatabase(IStreamRepository):
                     return dict(zip(columns, row))
                 return None
         except Exception as e:
-            self.logger.error(f"Error getting configuration: {e}")
+            self.logger.error(f"[DatabaseService] Error getting configuration: {e}")
             return None
 
     async def get_all(self) -> List[Dict[str, Any]]:
@@ -169,7 +169,7 @@ class SQLiteDatabase(IStreamRepository):
                     return [dict(zip(columns, row)) for row in rows]
                 return []
         except Exception as e:
-            self.logger.error(f"Error getting all configurations: {e}")
+            self.logger.error(f"[DatabaseService] Error getting all configurations: {e}")
             return []
 
     async def delete(self, guild_id: int, platform: str, username: str) -> bool:
@@ -183,7 +183,7 @@ class SQLiteDatabase(IStreamRepository):
                 await self._db.commit()
                 return cursor.rowcount > 0
         except Exception as e:
-            self.logger.error(f"Error deleting configuration: {e}")
+            self.logger.error(f"[DatabaseService] Error deleting configuration: {e}")
             return False
 
     async def update_status(self, guild_id: int, platform: str, username: str, is_live: bool, is_active: bool) -> bool:
@@ -198,7 +198,7 @@ class SQLiteDatabase(IStreamRepository):
                 await self._db.commit()
                 return cursor.rowcount > 0
         except Exception as e:
-            self.logger.error(f"Error updating status: {e}")
+            self.logger.error(f"[DatabaseService] Error updating status: {e}")
             return False
         
 class DatabaseService:

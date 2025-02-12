@@ -39,6 +39,8 @@ class StreamService(IStreamService):
             config = await self.repository.get(ctx.guild.id, profile_url)
             if not config:
                 return False
+            
+            print(f"[BUG7] config: {config}")
 
             await self.repository.delete(ctx.guild.id, profile_url)
             await self.notification_service.remove_configuration(
