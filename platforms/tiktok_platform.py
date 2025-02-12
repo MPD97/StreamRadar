@@ -48,8 +48,8 @@ class TikTokPlatform(BasePlatform):
 
             # Check stream status
             status = await self._check_stream_status(room_id)
-            return status.get('is_live', False)
-
+            return status
+        
         except Exception as e:
             print(f"[TikTok] Error in is_stream_live: {str(e)}")
             print(f"[TikTok] Traceback: {traceback.format_exc()}")

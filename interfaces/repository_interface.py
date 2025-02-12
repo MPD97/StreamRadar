@@ -26,6 +26,6 @@ class IStreamRepository(ABC):
 
     @abstractmethod
     async def update_status(self, guild_id: int, platform: str, 
-                          username: str, is_live: bool) -> None:
+                          username: str, is_live: bool, is_active: bool) -> None:
         """Update stream status"""
         pass 

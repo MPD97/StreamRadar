@@ -95,7 +95,8 @@ class NotificationManager:
                 guild_id=config['guild_id'],
                 platform=config['platform'],
                 username=config['username'],
-                is_live=True
+                is_live=True,
+                is_active=True
             )
 
         except Exception as e:
@@ -128,11 +129,19 @@ class NotificationManager:
                     guild_id=config['guild_id'],
                     platform=config['platform'],
                     username=config['username'],
-                    is_live=False
+                    is_live=False,
+                    is_active=True
                 )
 
         except Exception as e:
             await self.logging_service.log_error(f"Error checking stream: {str(e)}")
+            await self.repository.update_status(
+                    config['guild_id'],
+                    config['platform'],
+                    config['username'],
+                    False,
+                    False
+                )
 
     async def _check_stream_loop(self, config: Dict[str, Any]) -> None:
         
@@ -162,11 +171,19 @@ class NotificationManager:
                     config['guild_id'],
                     config['platform'],
                     config['username'],
-                    current_status
+                    current_status,
+                    True
                 )
 
             except Exception as e:
                 await self.logging_service.log_error(e, f"Error checking stream: {config['profile_url']}")
+                await self.repository.update_status(
+                    config['guild_id'],
+                    config['platform'],
+                    config['username'],
+                    False,
+                    False
+                )
 
             await asyncio.sleep(self.check_interval)
 

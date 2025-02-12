@@ -161,7 +161,7 @@ class SQLiteDatabase(IStreamRepository):
         """Get all stream configurations"""
         try:
             async with self._db.cursor() as cursor:
-                await cursor.execute("SELECT * FROM stream_configs WHERE is_active = TRUE")
+                await cursor.execute("SELECT * FROM stream_configs")
                 rows = await cursor.fetchall()
                 
                 if rows:
@@ -186,21 +186,21 @@ class SQLiteDatabase(IStreamRepository):
             self.logger.error(f"Error deleting configuration: {e}")
             return False
 
-    async def update_status(self, guild_id: int, platform: str, username: str, is_live: bool) -> bool:
+    async def update_status(self, guild_id: int, platform: str, username: str, is_live: bool, is_active: bool) -> bool:
         """Update stream live status"""
         try:
             async with self._db.cursor() as cursor:
                 await cursor.execute("""
                     UPDATE stream_configs 
-                    SET is_live = ?
+                    SET is_live = ?, is_active = ?
                     WHERE guild_id = ? AND platform = ? AND username = ?
-                """, (1 if is_live else 0, guild_id, platform, username))
+                """, (1 if is_live else 0, 1 if is_active else 0, guild_id, platform, username))
                 await self._db.commit()
                 return cursor.rowcount > 0
         except Exception as e:
             self.logger.error(f"Error updating status: {e}")
             return False
-
+        
 class DatabaseService:
     def __init__(self):
         self.db_path = 'bot_data.db'

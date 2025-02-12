@@ -32,7 +32,7 @@ def setup_status_command(bot):
                 config for config in configs 
                 if config['guild_id'] == interaction.guild_id
             ]
-            
+            print(f"[BUG6] server_configs: {server_configs}")
             embed = StatusEmbed.create(server_configs, permission_info, bool(server_configs))
             
             if server_configs:
