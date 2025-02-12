@@ -1,11 +1,14 @@
+import logging
 import discord
 from datetime import datetime
 from typing import Optional
 from .config_service import LogLevel
 
+logger = logging.getLogger(__name__)
+
 class LoggingService:
-    def __init__(self, client, config_service):
-        self.client = client
+    def __init__(self, bot, config_service):
+        self.bot = bot
         self.config_service = config_service
         self.default_log_level = LogLevel.INFO
 
@@ -15,7 +18,7 @@ class LoggingService:
             if guild_id:
                 config = await self.config_service.get_logging_config(guild_id)
                 if config and config.get('channel_id'):
-                    channel = self.client.get_channel(config['channel_id'])
+                    channel = self.bot.get_channel(config['channel_id'])
                     if channel:
                         embed = discord.Embed(
                             title=f"Bot Log - {level}",
@@ -70,16 +73,40 @@ class LoggingService:
 
     async def log_info(self, message: str, guild_id: Optional[int] = None):
         """Log info message"""
-        await self._send_log(guild_id, LogLevel.INFO, message)
+        try:
+            logger.info(message)
+            
+            if guild_id:
+                # Możesz dodać tutaj dodatkową logikę logowania do bazy danych
+                pass
+                
+        except Exception as e:
+            logger.error(f"Error in logging service: {str(e)}\nMessage: {message}")
 
     async def log_warning(self, message: str, guild_id: Optional[int] = None):
         """Log warning message"""
-        await self._send_log(guild_id, LogLevel.WARNING, message)
+        try:
+            logger.warning(message)
+            
+            if guild_id:
+                # Możesz dodać tutaj dodatkową logikę logowania do bazy danych
+                pass
+                
+        except Exception as e:
+            logger.error(f"Error in logging service: {str(e)}\nMessage: {message}")
 
-    async def log_error(self, error: Exception, message: str = None, guild_id: Optional[int] = None):
+    async def log_error(self, error: Exception, message: str, guild_id: Optional[int] = None):
         """Log error message"""
-        error_message = message or "An error occurred"
-        await self._send_log(guild_id, LogLevel.ERROR, error_message, error)
+        try:
+            error_message = f"{message}\nError: {str(error)}"
+            logger.error(error_message)
+            
+            if guild_id:
+                # Możesz dodać tutaj dodatkową logikę logowania do bazy danych
+                pass
+                
+        except Exception as e:
+            logger.error(f"Error in logging service: {str(e)}\nOriginal error: {str(error)}")
 
     async def log_critical(self, error: Exception, context: str = ""):
         """Log critical error message with context"""

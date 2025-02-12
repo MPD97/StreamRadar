@@ -4,6 +4,9 @@ from enum import Enum
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from .database_service import DatabaseService
+import logging
+
+logger = logging.getLogger(__name__)
 
 class LogLevel(Enum):
     DEBUG = 0
@@ -71,9 +74,9 @@ class ConfigurationService:
         """Get all active configurations"""
         return await self.db_service.get_all_active_configs()
 
-    async def save_stream_state(self, guild_id: int, profile_url: str, is_live: bool):
+    async def save_stream_state(self, guild_id: int, platform: str, username: str, is_live: bool):
         """Save stream state"""
-        await self.db_service.update_stream_status(guild_id, profile_url, is_live)
+        await self.db_service.update_stream_status(guild_id, platform, username, is_live)
 
     async def set_logging_channel(self, guild_id: int, channel_id: int, log_level: str = 'INFO'):
         """Set logging channel for a server"""
@@ -152,22 +155,22 @@ class ConfigurationService:
     def get_log_level(self) -> str:
         return self.data.get("log_level", "INFO")
 
-    async def get_stream_status(self, guild_id: int, profile_url: str) -> Dict[str, Any]:
+    async def get_stream_status(self, guild_id: int, platform: str, username: str) -> Dict[str, Any]:
         """Get stream status from database"""
-        return await self.db_service.get_stream_status(guild_id, profile_url)
+        return await self.db_service.get_stream_status(guild_id, platform, username)
 
     async def get_stream_state(self, guild_id: int, profile_url: str) -> Dict[str, Any]:
         """Get stream state from database"""
         return await self.db_service.get_stream_status(guild_id, profile_url)
 
-    async def update_configuration_status(self, guild_id: int, profile_url: str, is_active: bool, error_message: str = None):
+    async def update_configuration_status(self, guild_id: int, platform: str, username: str, is_active: bool, error_message: str = None):
         """Update configuration status and error message"""
-        await self.db_service.update_configuration_status(guild_id, profile_url, is_active, error_message)
+        await self.db_service.update_configuration_status(guild_id, platform, username, is_active, error_message)
 
-    async def get_configuration(self, guild_id: int, profile_url: str) -> Optional[Dict[str, Any]]:
+    async def get_configuration(self, guild_id: int, platform: str, username: str) -> Optional[Dict[str, Any]]:
         """Get specific configuration"""
-        return await self.db_service.get_configuration(guild_id, profile_url)
+        return await self.db_service.get_configuration(guild_id, platform, username)
 
-    async def delete_configuration(self, guild_id: int, profile_url: str) -> bool:
+    async def delete_configuration(self, guild_id: int, platform: str, username: str) -> bool:
         """Delete a configuration"""
-        return await self.db_service.delete_configuration(guild_id, profile_url) 
+        return await self.db_service.delete_configuration(guild_id, platform, username) 

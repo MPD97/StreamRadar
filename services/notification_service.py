@@ -1,11 +1,18 @@
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import asyncio
-from .platforms.tiktok_platform import TikTokPlatform
-from .platforms.twitch_platform import TwitchPlatform
+from platforms.twitch_platform import TwitchPlatform
+from platforms.tiktok_platform import TikTokPlatform
 from datetime import datetime, timedelta
 import traceback
 from typing import Dict, Any, Optional
 from enum import Enum
 import discord
+import logging
+
+logger = logging.getLogger(__name__)
 
 class ServiceStatus(Enum):
     RUNNING = "Running"
@@ -34,66 +41,38 @@ class NotificationService():
         }
     }
 
-    def __init__(self, client, config_service, logging_service):
-        self.client = client
+    def __init__(self, bot, config_service, logging_service):
+        self.bot = bot
         self.config_service = config_service
         self.logging_service = logging_service
         self.platforms = {
-            'tiktok': TikTokPlatform(config_service),
-            'twitch': TwitchPlatform(config_service)
+            'twitch': TwitchPlatform(config_service),
+            'tiktok': TikTokPlatform(config_service)
         }
-        self.checking_tasks: Dict[str, Dict[str, Any]] = {}  # key: f"{guild_id}:{profile_url}"
-        self.stream_statuses: Dict[str, StreamCheckStatus] = {}
-        self.is_running = False
+        self.check_tasks = {}
+        self._running = False
         self.service_status = ServiceStatus.STOPPED
         self.last_error = None
         self.start_time = None
+        self.check_interval = 60  # sekundy
+        self.main_task = None
 
     async def start_checking(self):
-        """Start checking all configured streams across all servers"""
-        await self.logging_service.log_info("Starting stream checking service")
-        self.is_running = True
-        self.service_status = ServiceStatus.RUNNING
-        self.start_time = datetime.now()
-        
-        try:
-            configs = await self.config_service.get_all_configurations()
-            for config in configs:
-                guild_id = config['guild_id']
-                profile_url = config['profile_url']
-                task_key = f"{guild_id}:{profile_url}"
-                if task_key not in self.checking_tasks:
-                    task = asyncio.create_task(self.check_stream_loop(config))
-                    self.checking_tasks[task_key] = {
-                        'task': task,
-                        'last_check': datetime.now(),
-                        'status': 'running',
-                        'guild_id': guild_id
-                    }
-                    
-                    status = StreamCheckStatus()
-                    status.status = ServiceStatus.RUNNING
-                    status.guild_id = guild_id
-                    self.stream_statuses[task_key] = status
-                    
-                    await self.logging_service.log_debug(
-                        f"Started checking for {profile_url}", 
-                        guild_id
-                    )
-        
-        except Exception as e:
-            self.service_status = ServiceStatus.ERROR
-            self.last_error = str(e)
-            self.is_running = False
-            await self.logging_service.log_error(e, "Error while starting stream checks")
-            raise
+        """Start checking all stream statuses"""
+        if self._running:
+            return
+
+        self._running = True
+        logger.info("Starting stream status checking loop...")
+        self.main_task = asyncio.create_task(self._check_streams_loop())
+        logger.info("Stream status checking loop started")
 
     async def monitor_health(self):
         """Monitors checking tasks health and restarts them if needed"""
-        while self.is_running:
+        while self._running:
             try:
                 current_time = datetime.now()
-                for task_key, task_info in self.checking_tasks.items():
+                for task_key, task_info in self.check_tasks.items():
                     # Check if task is not responding (no activity for 5 minutes)
                     if (current_time - task_info['last_check']).total_seconds() > 300:
                         await self.logging_service.log_warning(
@@ -112,7 +91,7 @@ class NotificationService():
                         )
                         if config:
                             new_task = asyncio.create_task(self.check_stream_loop(config))
-                            self.checking_tasks[task_key] = {
+                            self.check_tasks[task_key] = {
                                 'task': new_task,
                                 'last_check': current_time,
                                 'status': 'restarted',
@@ -132,11 +111,11 @@ class NotificationService():
     async def check_stream_loop(self, config: Dict[str, Any]):
         """Check single stream with error handling and status tracking"""
         task_key = f"{config['guild_id']}:{config['profile_url']}"
-        status = self.stream_statuses.get(task_key)
+        status = self.check_tasks.get(task_key)
         if not status:
             status = StreamCheckStatus()
             status.guild_id = config['guild_id']
-            self.stream_statuses[task_key] = status
+            self.check_tasks[task_key] = status
         
         status.status = ServiceStatus.RUNNING
         platform = self.platforms.get(config['platform'].lower())
@@ -153,7 +132,7 @@ class NotificationService():
         previous_state = await self.config_service.get_stream_status(config['guild_id'], config['profile_url'])
         status.is_live = previous_state.get('is_live', False)
 
-        while self.is_running:
+        while self._running:
             try:
                 status.last_check = datetime.now()
                 check_result = await platform.is_stream_live(config['profile_url'])
@@ -226,7 +205,7 @@ class NotificationService():
         """Handle cases where notification channel is not found"""
         try:
             # Try to fetch channel information from Discord
-            guild = self.client.get_guild(config.get('guild_id'))
+            guild = self.bot.get_guild(config.get('guild_id'))
             if guild:
                 # Check if channel exists with different ID
                 channel = discord.utils.get(guild.channels, name=config.get('channel_name'))
@@ -270,9 +249,9 @@ class NotificationService():
                 
                 # Stop checking this stream
                 task_key = f"{guild_id}:{config['profile_url']}"
-                if task_key in self.checking_tasks:
-                    self.checking_tasks[task_key]['task'].cancel()
-                    del self.checking_tasks[task_key]
+                if task_key in self.check_tasks:
+                    self.check_tasks[task_key]['task'].cancel()
+                    del self.check_tasks[task_key]
                 
                 return
 
@@ -294,7 +273,7 @@ class NotificationService():
         """Handle stream state changes and send notifications"""
         try:
             guild_id = config['guild_id']
-            guild = self.client.get_guild(guild_id)
+            guild = self.bot.get_guild(guild_id)
             
             if not guild:
                 await self.logging_service.log_error(
@@ -382,29 +361,36 @@ class NotificationService():
                     "success_count": status.success_count,
                     "consecutive_errors": status.consecutive_errors,
                     "last_error": status.last_error
-                } for task_key, status in self.stream_statuses.items()
+                } for task_key, status in self.check_tasks.items()
             },
             "configurations": await self.config_service.get_all_configurations()
         }
 
     async def stop_checking(self):
-        """Safely stops all checking tasks"""
-        self.is_running = False
+        """Stop checking all stream statuses"""
+        self._running = False
         self.service_status = ServiceStatus.STOPPED
         
-        for task_key, task_info in self.checking_tasks.items():
+        if self.main_task and not self.main_task.done():
+            self.main_task.cancel()
+            try:
+                await self.main_task
+            except asyncio.CancelledError:
+                pass
+        
+        for task_key, task_info in self.check_tasks.items():
             try:
                 if not task_info['task'].done():
                     task_info['task'].cancel()
                     await task_info['task']  # Wait for task to be cancelled
-                if task_key in self.stream_statuses:
-                    self.stream_statuses[task_key].status = ServiceStatus.STOPPED
+                if task_key in self.check_tasks:
+                    self.check_tasks[task_key].status = ServiceStatus.STOPPED
             except asyncio.CancelledError:
                 pass  # Expected when cancelling tasks
             except Exception as e:
                 await self.logging_service.log_error(e, f"Error while stopping task for {task_key}", guild_id=task_info['guild_id'])
         
-        self.checking_tasks.clear()
+        self.check_tasks.clear()
         await self.logging_service.log_info("All checking tasks have been stopped")
 
     async def reload_configuration(self):
@@ -415,8 +401,7 @@ class NotificationService():
             await self.stop_checking()
             
             # Clear existing tasks and statuses
-            self.checking_tasks.clear()
-            self.stream_statuses.clear()
+            self.check_tasks.clear()
             
             # Start checking with new configuration
             await self.start_checking()
@@ -432,10 +417,10 @@ class NotificationService():
             print(f"Adding new configuration for {config['profile_url']}")
             
             task_key = f"{config['guild_id']}:{config['profile_url']}"
-            if task_key not in self.checking_tasks:
+            if task_key not in self.check_tasks:
                 # Create new checking task
                 task = asyncio.create_task(self.check_stream_loop(config))
-                self.checking_tasks[task_key] = {
+                self.check_tasks[task_key] = {
                     'task': task,
                     'last_check': datetime.now(),
                     'status': 'running',
@@ -446,7 +431,7 @@ class NotificationService():
                 status = StreamCheckStatus()
                 status.status = ServiceStatus.RUNNING
                 status.guild_id = config['guild_id']
-                self.stream_statuses[task_key] = status
+                self.check_tasks[task_key] = status
                 
                 await self.logging_service.log_info(
                     f"Started checking for new configuration: {config['profile_url']}",
@@ -469,7 +454,7 @@ class NotificationService():
     async def send_notification(self, config):
         """Sends notification with error handling"""
         try:
-            channel = self.client.get_channel(config['channel_id'])
+            channel = self.bot.get_channel(config['channel_id'])
             if channel:
                 message = f"<@&{config['role_id']}> {config['message']}\n{config['profile_url']}"
                 await channel.send(message)
@@ -488,34 +473,48 @@ class NotificationService():
                 guild_id=config['guild_id']
             )
 
-    async def remove_configuration(self, guild_id: int, profile_url: str):
-        """Remove configuration and stop checking"""
-        task_key = f"{guild_id}:{profile_url}"
-        if task_key in self.checking_tasks:
-            self.checking_tasks[task_key]['task'].cancel()
-            del self.checking_tasks[task_key]
-            if task_key in self.stream_statuses:
-                del self.stream_statuses[task_key]
+    async def remove_configuration(self, guild_id: int, username: str, platform: str):
+        """Remove configuration from notification service"""
+        try:
+            config_key = f"{guild_id}_{platform}_{username}"
+            if config_key in self.check_tasks:
+                task = self.check_tasks[config_key]
+                if not task.done():
+                    task.cancel()
+                del self.check_tasks[config_key]
+                
+            await self.logging_service.log_info(
+                f"Removed configuration for {platform} streamer: {username}",
+                guild_id
+            )
+            
+        except Exception as e:
+            await self.logging_service.log_error(
+                e,
+                f"Error removing configuration for {platform} streamer: {username}",
+                guild_id
+            )
+            raise
 
     async def handle_configuration_toggle(self, guild_id: int, profile_url: str, enable: bool):
         """Handle configuration enable/disable"""
         task_key = f"{guild_id}:{profile_url}"
         
         if enable:
-            if task_key not in self.checking_tasks:
+            if task_key not in self.check_tasks:
                 config = await self.config_service.get_configuration(guild_id, profile_url)
                 if config:
                     task = asyncio.create_task(self.check_stream_loop(config))
-                    self.checking_tasks[task_key] = {
+                    self.check_tasks[task_key] = {
                         'task': task,
                         'last_check': datetime.now(),
                         'status': 'running',
                         'guild_id': guild_id
                     }
         else:
-            if task_key in self.checking_tasks:
-                self.checking_tasks[task_key]['task'].cancel()
-                del self.checking_tasks[task_key]
+            if task_key in self.check_tasks:
+                self.check_tasks[task_key]['task'].cancel()
+                del self.check_tasks[task_key]
 
     async def update_configuration(self, config: Dict[str, Any]):
         """Update existing stream checking configuration"""
@@ -523,8 +522,8 @@ class NotificationService():
             task_key = f"{config['guild_id']}:{config['profile_url']}"
             
             # Stop existing task
-            if task_key in self.checking_tasks:
-                task_info = self.checking_tasks[task_key]
+            if task_key in self.check_tasks:
+                task_info = self.check_tasks[task_key]
                 if not task_info['task'].done():
                     task_info['task'].cancel()
             
@@ -533,7 +532,7 @@ class NotificationService():
             
             # Start new task with updated config
             task = asyncio.create_task(self.check_stream_loop(config))
-            self.checking_tasks[task_key] = {
+            self.check_tasks[task_key] = {
                 'task': task,
                 'last_check': datetime.now(),
                 'status': 'running',
@@ -550,4 +549,174 @@ class NotificationService():
                 f"Error updating configuration for {config['profile_url']}",
                 guild_id=config['guild_id']
             )
-            raise 
+            raise
+
+    async def add_configuration(self, config: Dict[str, Any]):
+        """Add new configuration to notification service"""
+        try:
+            guild_id = config['guild_id']
+            platform = config['platform']
+            username = config['username']
+            
+            config_key = f"{guild_id}_{platform}_{username}"
+            
+            if config_key in self.check_tasks:
+                old_task = self.check_tasks[config_key]
+                if not old_task.done():
+                    old_task.cancel()
+            
+            if self._running:
+                await self._check_single_stream_status(config)
+            
+            await self.logging_service.log_info(
+                f"Added configuration for {platform} streamer: {username}",
+                guild_id
+            )
+            
+        except Exception as e:
+            await self.logging_service.log_error(
+                e,
+                f"Error adding configuration for {config.get('platform', 'unknown')} streamer: {config.get('username', 'unknown')}",
+                config.get('guild_id')
+            )
+            raise
+
+    async def _check_streams_loop(self):
+        """Main loop for checking all stream statuses"""
+        while self._running:
+            try:
+                logger.info("Checking all stream statuses...")
+                configs = await self.config_service.get_all_configurations()
+                
+                for config in configs:
+                    if not self._running:
+                        break
+                    
+                    try:
+                        await self._check_single_stream_status(config)
+                    except Exception as e:
+                        await self.logging_service.log_error(
+                            e,
+                            f"Error checking single stream status for {config['platform']} streamer: {config['username']}",
+                            config['guild_id']
+                        )
+                
+                logger.info("Finished checking all stream statuses")
+                await asyncio.sleep(self.check_interval)
+                
+            except asyncio.CancelledError:
+                logger.info("Stream status checking loop cancelled")
+                break
+            except Exception as e:
+                logger.error(f"Error in stream status checking loop: {e}")
+                await asyncio.sleep(self.check_interval)
+
+    async def _check_single_stream_status(self, config: Dict[str, Any]):
+        """Check stream status once"""
+        try:
+            guild_id = config['guild_id']
+            platform = config['platform']
+            username = config['username']
+            profile_url = config.get('profile_url', username)  # używamy profile_url jeśli istnieje, w przeciwnym razie username
+            
+            logger.info(f"Checking status for {platform} streamer: {username}")
+            
+            # Pobierz odpowiednią platformę
+            platform_service = self.platforms.get(platform.lower())
+            if not platform_service:
+                raise ValueError(f"Unsupported platform: {platform}")
+            
+            # Sprawdź status streama używając odpowiedniej platformy
+            try:
+                # Użyj profile_url zamiast samego username
+                status = await platform_service.is_stream_live(profile_url)
+                
+                # Sprawdź czy mamy do czynienia ze słownikiem czy wartością boolean
+                if isinstance(status, dict):
+                    is_live = status.get('is_live', False)
+                    error_message = status.get('error')
+                    # Zmiana logiki - konfiguracja jest aktywna, chyba że wystąpił błąd "user not found"
+                    is_active = True
+                    if error_message and 'user not found' in str(error_message).lower():
+                        is_active = False
+                else:
+                    is_live = bool(status)
+                    error_message = None
+                    is_active = True
+                    
+            except Exception as platform_error:
+                logger.error(f"Platform error for {platform} streamer {username}: {str(platform_error)}")
+                is_live = False
+                error_message = str(platform_error)
+                # Nie ustawiamy is_active na False przy każdym błędzie
+                is_active = True
+            
+            # Aktualizuj status w bazie danych
+            await self.config_service.db_service.save_stream_state(guild_id, platform, username, is_live)
+            
+            # Aktualizuj status konfiguracji tylko jeśli mamy błąd "user not found"
+            if not is_active or error_message:
+                await self.config_service.db_service.update_configuration_status(
+                    guild_id, 
+                    platform, 
+                    username, 
+                    is_active,
+                    error_message
+                )
+            
+            # Jeśli streamer jest live, wyślij powiadomienie
+            if is_live:
+                await self._send_notification(config)
+            
+            logger.info(f"Status updated for {platform} streamer: {username} (live: {is_live}, active: {is_active})")
+            
+        except Exception as e:
+            await self.logging_service.log_error(
+                e,
+                f"Error in single stream status check for {config['platform']} streamer: {config['username']}",
+                config['guild_id']
+            )
+            
+            # Aktualizuj status konfiguracji z błędem tylko w przypadku poważnych błędów
+            await self.config_service.db_service.update_configuration_status(
+                config['guild_id'],
+                config['platform'],
+                config['username'],
+                True,  # Zostawiamy konfigurację aktywną
+                str(e)  # error_message
+            )
+
+    async def _send_notification(self, config: Dict[str, Any]):
+        """Send stream notification to Discord channel"""
+        try:
+            channel = self.bot.get_channel(config['channel_id'])
+            if not channel:
+                logger.error(f"Channel {config['channel_id']} not found")
+                return
+
+            # Sprawdź czy już wysłano powiadomienie
+            last_status = await self.config_service.get_stream_status(
+                config['guild_id'],
+                config['platform'],
+                config['username']
+            )
+            
+            # Jeśli poprzedni status też był live, nie wysyłaj powiadomienia
+            if last_status and last_status.get('is_live'):
+                return
+
+            # Przygotuj i wyślij wiadomość
+            message = config['message']
+            if config['platform'] == 'twitch':
+                url = f"https://twitch.tv/{config['username']}"
+            else:  # tiktok
+                url = f"https://tiktok.com/@{config['username']}"
+
+            await channel.send(f"{message}\n{url}")
+            
+        except Exception as e:
+            await self.logging_service.log_error(
+                e,
+                f"Error sending notification for {config['platform']} streamer: {config['username']}",
+                config['guild_id']
+            ) 
