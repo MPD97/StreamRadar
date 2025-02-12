@@ -3,6 +3,7 @@ from .base_platform import BasePlatform
 import os
 import re
 from datetime import datetime, timedelta
+from typing import Dict, Any, Optional
 
 class TwitchPlatform(BasePlatform):
     def __init__(self, config_service):
@@ -14,98 +15,119 @@ class TwitchPlatform(BasePlatform):
         
         self.access_token = None
         self.token_expires_at = None
+        self.session = None
         self.headers = {
             'Client-ID': self.client_id,
             'Accept': 'application/json'
         }
 
-    async def get_access_token(self):
-        """Get new access token from Twitch API"""
-        try:
-            async with aiohttp.ClientSession() as session:
-                url = 'https://id.twitch.tv/oauth2/token'
-                params = {
-                    'client_id': self.client_id,
-                    'client_secret': self.client_secret,
-                    'grant_type': 'client_credentials'
-                }
-                
-                async with session.post(url, params=params) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        self.access_token = data['access_token']
-                        # Set token expiration (usually 60 days, but we set 50 for safety)
-                        self.token_expires_at = datetime.now() + timedelta(days=50)
-                        self.headers['Authorization'] = f'Bearer {self.access_token}'
-                        print("Successfully refreshed Twitch token")
-                    else:
-                        error_data = await response.text()
-                        raise Exception(f"Error getting Twitch token: {response.status} - {error_data}")
-        except Exception as e:
-            print(f"Error getting Twitch token: {str(e)}")
-            raise
+    async def initialize(self):
+        """Initialize the platform"""
+        self.session = aiohttp.ClientSession()
 
-    async def ensure_valid_token(self):
-        """Check and refresh token if needed"""
-        if not self.access_token or not self.token_expires_at or datetime.now() >= self.token_expires_at:
-            await self.get_access_token()
+    async def cleanup(self):
+        """Cleanup resources"""
+        if self.session and not self.session.closed:
+            await self.session.close()
 
-    async def is_stream_live(self, profile_url: str) -> bool:
-        try:
-            await self.ensure_valid_token()
+    def _extract_username(self, profile_url: str) -> Optional[str]:
+        """Extract username from Twitch URL"""
+        match = re.search(r'twitch\.tv/([a-zA-Z0-9_]+)', profile_url)
+        return match.group(1) if match else None
+
+    async def _ensure_token(self):
+        """Ensure we have a valid access token"""
+        if not self.session:
+            await self.initialize()
+
+        now = datetime.now().timestamp()
+        if not self.access_token or (self.token_expires_at and now >= self.token_expires_at):
+            params = {
+                'client_id': self.client_id,
+                'client_secret': self.client_secret,
+                'grant_type': 'client_credentials'
+            }
             
+            async with self.session.post('https://id.twitch.tv/oauth2/token', params=params) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    self.access_token = data['access_token']
+                    self.token_expires_at = now + data['expires_in']
+                else:
+                    raise Exception(f"Failed to get Twitch token: {response.status}")
+
+    async def _get_user_data(self, username: str) -> Optional[Dict[str, Any]]:
+        """Get user data from Twitch API"""
+        await self._ensure_token()
+        
+        headers = {
+            'Client-ID': self.client_id,
+            'Authorization': f'Bearer {self.access_token}'
+        }
+        
+        url = f'https://api.twitch.tv/helix/users?login={username}'
+        async with self.session.get(url, headers=headers) as response:
+            if response.status == 200:
+                data = await response.json()
+                users = data.get('data', [])
+                return users[0] if users else None
+            elif response.status == 404:
+                return None
+            else:
+                raise Exception(f"Twitch API error: {response.status}")
+
+    async def _get_stream_data(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """Get stream data from Twitch API"""
+        await self._ensure_token()
+        
+        headers = {
+            'Client-ID': self.client_id,
+            'Authorization': f'Bearer {self.access_token}'
+        }
+        
+        url = f'https://api.twitch.tv/helix/streams?user_id={user_id}'
+        async with self.session.get(url, headers=headers) as response:
+            if response.status == 200:
+                data = await response.json()
+                streams = data.get('data', [])
+                return streams[0] if streams else None
+            else:
+                raise Exception(f"Twitch API error: {response.status}")
+
+    async def is_stream_live(self, profile_url: str) -> Dict[str, Any]:
+        """Check if stream is live"""
+        try:
             username = self._extract_username(profile_url)
             if not username:
-                print(f"Could not extract username from URL: {profile_url}")
-                return False
+                return {
+                    'is_live': False,
+                    'error': f'Invalid Twitch URL: {profile_url}'
+                }
 
-            async with aiohttp.ClientSession(headers=self.headers) as session:
-                # First get user ID
-                user_url = f"https://api.twitch.tv/helix/users?login={username}"
-                async with session.get(user_url) as response:
-                    if response.status == 401:
-                        # Token expired or invalid, try to refresh
-                        print("Token expired, refreshing...")
-                        await self.get_access_token()
-                        # Retry with new token
-                        return await self.is_stream_live(profile_url)
-                    
-                    if response.status != 200:
-                        error_data = await response.text()
-                        print(f"Error getting user data: {response.status} - {error_data}")
-                        return False
-                    
-                    user_data = await response.json()
-                    if not user_data.get('data'):
-                        print(f"User not found: {username}")
-                        return False
-                    
-                    user_id = user_data['data'][0]['id']
-                    
-                    # Now check stream status
-                    stream_url = f"https://api.twitch.tv/helix/streams?user_id={user_id}"
-                    async with session.get(stream_url) as stream_response:
-                        if stream_response.status != 200:
-                            error_data = await stream_response.text()
-                            print(f"Error checking stream status: {stream_response.status} - {error_data}")
-                            return False
-                        
-                        stream_data = await stream_response.json()
-                        is_live = bool(stream_data.get('data'))
-                        
-                        if is_live:
-                            print(f"Stream active for {username}")
-                        else:
-                            print(f"No active stream for {username}")
-                        
-                        return is_live
+            user_data = await self._get_user_data(username)
+            if not user_data:
+                return {
+                    'is_live': False,
+                    'error': f'User not found: {username}'
+                }
+
+            stream_data = await self._get_stream_data(user_data['id'])
+            
+            is_live = bool(stream_data)
+            print(f"[Twitch] Check result for {username}: {'Live' if is_live else 'Offline'}")
+            
+            return {
+                'is_live': is_live,
+                'user_id': user_data['id'],
+                'username': username,
+                'timestamp': datetime.now().isoformat()
+            }
 
         except Exception as e:
-            print(f"Error checking Twitch stream: {str(e)}")
-            return False
-
-    def _extract_username(self, profile_url: str) -> str:
-        """Extract username from Twitch URL"""
-        pattern = r'(?:https?://)?(?:www\.)?twitch\.tv/([a-zA-Z0-9_]+)'
-        match = re.match(pattern, profile_url)
-        return match.group(1) if match else None 
+            print(f"[Twitch] Error checking {profile_url}: {str(e)}")
+            return {
+                'is_live': False,
+                'error': str(e),
+                'username': username if 'username' in locals() else None,
+                'timestamp': datetime.now().isoformat()
+            } 
