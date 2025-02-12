@@ -5,8 +5,101 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 import aiosqlite
 import logging
+from interfaces.database_interface import IDatabase
 
 logger = logging.getLogger(__name__)
+
+class SQLiteDatabase(IDatabase):
+    """SQLite database implementation"""
+    
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+        self._connection = None
+
+    async def initialize(self) -> None:
+        """Initialize database and create tables"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await self._create_tables(db)
+            logger.info("Database initialized successfully")
+        except Exception as e:
+            logger.error(f"Database initialization error: {e}")
+            raise
+
+    async def execute(self, query: str, params: tuple = None) -> Any:
+        """Execute database query"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                async with db.execute(query, params or ()) as cursor:
+                    await db.commit()
+                    return cursor.rowcount
+        except Exception as e:
+            logger.error(f"Query execution error: {e}")
+            raise
+
+    async def fetch_one(self, query: str, params: tuple = None) -> Optional[Dict[str, Any]]:
+        """Fetch single row from database"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                db.row_factory = self._dict_factory
+                async with db.execute(query, params or ()) as cursor:
+                    return await cursor.fetchone()
+        except Exception as e:
+            logger.error(f"Fetch one error: {e}")
+            raise
+
+    async def fetch_all(self, query: str, params: tuple = None) -> List[Dict[str, Any]]:
+        """Fetch multiple rows from database"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                db.row_factory = self._dict_factory
+                async with db.execute(query, params or ()) as cursor:
+                    return await cursor.fetchall()
+        except Exception as e:
+            logger.error(f"Fetch all error: {e}")
+            raise
+
+    async def transaction(self):
+        """Context manager for database transactions"""
+        return aiosqlite.connect(self.db_path)
+
+    async def _create_tables(self, db: aiosqlite.Connection) -> None:
+        """Create database tables"""
+        await db.execute('''
+            CREATE TABLE IF NOT EXISTS stream_configs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id INTEGER NOT NULL,
+                platform TEXT NOT NULL,
+                username TEXT NOT NULL,
+                profile_url TEXT NOT NULL,
+                channel_id INTEGER NOT NULL,
+                channel_name TEXT NOT NULL,
+                role_id INTEGER NOT NULL,
+                role_name TEXT NOT NULL,
+                message TEXT NOT NULL,
+                is_active BOOLEAN DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(guild_id, platform, username)
+            )
+        ''')
+
+        await db.execute('''
+            CREATE TABLE IF NOT EXISTS stream_status (
+                guild_id INTEGER NOT NULL,
+                platform TEXT NOT NULL,
+                username TEXT NOT NULL,
+                is_live BOOLEAN NOT NULL,
+                last_check TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (guild_id, platform, username)
+            )
+        ''')
+
+        await db.commit()
+
+    @staticmethod
+    def _dict_factory(cursor: aiosqlite.Cursor, row: tuple) -> Dict[str, Any]:
+        """Convert SQL row to dictionary"""
+        return {col[0]: row[idx] for idx, col in enumerate(cursor.description)}
 
 class DatabaseService:
     def __init__(self):
