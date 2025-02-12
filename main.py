@@ -1,15 +1,18 @@
 import os
 import discord
-from discord import app_commands
+from discord.ext import commands
 import asyncio
 import logging
-from typing import Optional
-
-from services.database_service import DatabaseService
-from services.config_service import ConfigurationService
-from services.notification_service import NotificationService
+from typing import Dict, Any
+from services.database_service import SQLiteDatabase
+from services.config_manager import ConfigManager
+from services.stream_service import StreamService
+from services.notification_manager import NotificationManager
 from services.logging_service import LoggingService
-from commands import CommandManager
+from services.error_handler import ErrorHandler
+from commands.add_config_command import setup_add_config_command
+from commands.delete_config_command import setup_delete_config_command
+from commands.status_command import setup_status_command
 
 # Konfiguracja logowania
 logging.basicConfig(
@@ -23,95 +26,134 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-class NotificationBot(discord.Client):
-    def __init__(self):
-        super().__init__(intents=discord.Intents.all())
-        self.tree = app_commands.CommandTree(self)
-        self._ready = asyncio.Event()
-        self._setup_complete = False
+class NotificationBot(commands.Bot):
+    def __init__(self, config: Dict[str, Any]):
+        intents = discord.Intents.default()
+        intents.message_content = True
+        intents.members = True
+        
+        super().__init__(
+            command_prefix=config['prefix'],
+            intents=intents,
+            help_command=None
+        )
 
-    async def setup_hook(self):
-        """Initialize bot services and commands"""
+        self.config = config
+        self._setup_services()
+
+    def _setup_services(self) -> None:
+        """Initialize bot services"""
         try:
-            logger.info("Setting up bot hooks...")
-            
-            logger.info("Initializing services...")
-            self.db_service = DatabaseService()
-            self.config_service = ConfigurationService(self.db_service)
-            self.logging_service = LoggingService(self, self.config_service)
-            self.notification_service = NotificationService(
-                self,
-                self.config_service,
-                self.logging_service
+            # Initialize logging first
+            self.logging_service = LoggingService(
+                log_level=self.config.get('log_level', 'INFO'),
+                log_channel_id=self.config.get('log_channel_id')
             )
+            self.logging_service.set_bot(self)
+            
+            # Initialize config and error handler
+            self.config_manager = ConfigManager()
+            self.error_handler = ErrorHandler(self.logging_service)
+            
+            # Initialize database
+            self.db_service = SQLiteDatabase('database.sqlite')
+            
+            # Initialize stream service with logging
+            self.stream_service = StreamService(
+                self.db_service,
+                self.logging_service,
+                self.config_manager
+            )
+            
+            # Initialize notification manager last
+            self.notification_manager = NotificationManager(
+                bot=self,
+                repository=self.db_service,
+                logging_service=self.logging_service,
+                config_service=self.config_manager,
+                check_interval=self.config.get('check_interval', 60)
+            )
+            
             logger.info("Services initialized successfully")
 
-            logger.info("Initializing database...")
-            await self.db_service.initialize()
-            await self.config_service.initialize()
-            logger.info("Database initialized")
-
-            logger.info("Initializing platforms...")
-            # Tu możesz dodać inicjalizację platform
-            logger.info("Platforms initialized")
-
-            logger.info("Setting up commands...")
-            self.command_manager = CommandManager(self)
-            self.command_manager.setup()
-            await self.tree.sync()
-            logger.info("Commands setup complete")
-
-            self._setup_complete = True
-            logger.info("Bot setup complete")
-
         except Exception as e:
-            logger.error(f"Error in setup_hook: {e}", exc_info=True)
+            logger.error(f"Error initializing services: {e}")
             raise
 
-    async def on_ready(self):
-        """Handle bot ready event"""
+    async def setup_hook(self) -> None:
+        """Setup bot hooks and start services"""
         try:
-            if not self._setup_complete:
-                logger.warning("Bot ready but setup not complete!")
-                return
-
-            logger.info(f'Logged in as {self.user.name} (ID: {self.user.id})')
-            logger.info(f'Connected to {len(self.guilds)} guilds')
+            # Initialize database
+            await self.db_service.initialize()
+            logger.info("Database initialized successfully")
             
-            logger.info("Starting notification service...")
-            await self.notification_service.start_checking()
+            # Setup commands
+            setup_add_config_command(self)
+            setup_delete_config_command(self)
+            setup_status_command(self)
+            logger.info("Commands setup completed")
+
+            # Start notification service
+            await self.notification_manager.start_all_monitoring()
             logger.info("Notification service started")
             
-            self._ready.set()
-            logger.info("Bot is fully ready")
+            logger.info("Bot setup completed successfully")
 
         except Exception as e:
-            logger.error(f"Error in on_ready: {e}", exc_info=True)
-            self._ready.set()
+            logger.error(f"Error in setup hook: {e}")
+            raise
+
+    async def close(self) -> None:
+        """Cleanup before shutdown"""
+        try:
+            # Stop notification service
+            if hasattr(self, 'notification_manager'):
+                await self.notification_manager.stop_all_monitoring()
+                logger.info("Notification service stopped")
+
+            # Close database connection
+            if hasattr(self, 'db_service'):
+                await self.db_service.close()
+                logger.info("Database connection closed")
+
+            await super().close()
+            logger.info("Bot shutdown completed successfully")
+
+        except Exception as e:
+            logger.error(f"Error during shutdown: {e}")
+            raise
 
 async def run_bot_async():
+    """Run bot asynchronously"""
     try:
-        logger.info("Starting bot...")
-        token = os.getenv('DISCORD_TOKEN')
-        if not token:
-            logger.error("DISCORD_TOKEN not found in environment variables")
-            return
+        config = {
+            'prefix': os.getenv('BOT_PREFIX', '!'),
+            'token': os.getenv('DISCORD_TOKEN'),
+            'check_interval': int(os.getenv('CHECK_INTERVAL', '60')),
+            'log_level': os.getenv('LOG_LEVEL', 'INFO'),
+            'log_channel_id': int(os.getenv('LOG_CHANNEL_ID', '0')) or None
+        }
 
-        async with NotificationBot() as bot:
-            await bot.start(token)
-            
+        if not config['token']:
+            raise ValueError("Discord token not found in environment variables")
+
+        bot = NotificationBot(config)
+        async with bot:
+            await bot.start(config['token'])
+
     except Exception as e:
-        logger.error(f"Unexpected error: {e}", exc_info=True)
-    finally:
-        logger.info("Bot shutdown complete")
+        logger.error(f"Unexpected error: {e}")
+        raise
 
 def run_bot():
+    """Run bot"""
     try:
         asyncio.run(run_bot_async())
     except KeyboardInterrupt:
-        logger.info("Bot shutdown requested by user")
+        logger.info("Bot stopped by user")
     except Exception as e:
-        logger.error(f"Fatal error: {e}", exc_info=True)
+        logger.error(f"Fatal error: {e}")
+        raise
 
 if __name__ == "__main__":
     run_bot() 

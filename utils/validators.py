@@ -1,5 +1,5 @@
 import re
-from typing import Tuple
+from typing import Optional, Tuple
 
 class UsernameValidator:
     @staticmethod
@@ -55,4 +55,87 @@ class UsernameValidator:
         elif platform == 'tiktok':
             return UsernameValidator.validate_tiktok_username(username)
         else:
-            return False, f"Unsupported platform: {platform}" 
+            return False, f"Unsupported platform: {platform}"
+
+class Validators:
+    """Validation utilities for stream configurations"""
+
+    @staticmethod
+    def validate_twitch_url(url: str) -> Tuple[bool, Optional[str], Optional[str]]:
+        """
+        Validate Twitch URL and extract username
+        Returns: (is_valid, username, error_message)
+        """
+        if not url:
+            return False, None, "URL cannot be empty"
+
+        # Remove trailing slash if present
+        url = url.rstrip('/')
+
+        # Pattern for twitch URLs
+        patterns = [
+            r'^(?:https?:\/\/)?(?:www\.)?twitch\.tv\/([a-zA-Z0-9_]{4,25})$',
+            r'^([a-zA-Z0-9_]{4,25})$'
+        ]
+
+        for pattern in patterns:
+            match = re.match(pattern, url)
+            if match:
+                username = match.group(1).lower()
+                return True, username, None
+
+        return False, None, "Invalid Twitch URL format"
+
+    @staticmethod
+    def validate_tiktok_url(url: str) -> Tuple[bool, Optional[str], Optional[str]]:
+        """
+        Validate TikTok URL and extract username
+        Returns: (is_valid, username, error_message)
+        """
+        if not url:
+            return False, None, "URL cannot be empty"
+
+        # Remove trailing slash if present
+        url = url.rstrip('/')
+
+        # Pattern for TikTok URLs
+        patterns = [
+            r'^(?:https?:\/\/)?(?:www\.)?tiktok\.com\/@([a-zA-Z0-9_\.]{2,24})$',
+            r'^@?([a-zA-Z0-9_\.]{2,24})$'
+        ]
+
+        for pattern in patterns:
+            match = re.match(pattern, url)
+            if match:
+                username = match.group(1).lower()
+                return True, username, None
+
+        return False, None, "Invalid TikTok URL format"
+
+    @staticmethod
+    def validate_platform(platform: str) -> Tuple[bool, Optional[str]]:
+        """
+        Validate platform name
+        Returns: (is_valid, error_message)
+        """
+        valid_platforms = ['twitch', 'tiktok']
+        platform = platform.lower()
+        
+        if platform not in valid_platforms:
+            return False, f"Invalid platform. Supported platforms: {', '.join(valid_platforms)}"
+        
+        return True, None
+
+    @staticmethod
+    def validate_message(message: str) -> Tuple[bool, Optional[str]]:
+        """
+        Validate notification message
+        Returns: (is_valid, error_message)
+        """
+        if not message:
+            return False, "Message cannot be empty"
+        
+        if len(message) > 1000:
+            return False, "Message is too long (max 1000 characters)"
+        
+        return True, None 

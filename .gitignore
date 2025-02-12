@@ -1,5 +1,8 @@
 # config file
 config.json
+bot.log
+bot_data.db
+database.sqlite
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

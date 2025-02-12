@@ -1,16 +1,30 @@
 import logging
 import discord
+from typing import Optional, Union
 from datetime import datetime
-from typing import Optional
 from .config_service import LogLevel
 
 logger = logging.getLogger(__name__)
 
 class LoggingService:
-    def __init__(self, bot, config_service):
+    """Service for handling logging and error reporting"""
+
+    def __init__(self, log_level: str = 'INFO', log_channel_id: Optional[int] = None):
+        """Initialize logging service"""
+        self.bot = None
+        self.log_channel_id = log_channel_id
+        
+        # Setup logging
+        logging.basicConfig(
+            level=getattr(logging, log_level.upper()),
+            format='%(asctime)s [%(levelname)s] %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        self.logger = logging.getLogger(__name__)
+
+    def set_bot(self, bot: discord.Client) -> None:
+        """Set bot instance for Discord channel logging"""
         self.bot = bot
-        self.config_service = config_service
-        self.default_log_level = LogLevel.INFO
 
     async def _send_log(self, guild_id: Optional[int], level: str, message: str, error: Exception = None):
         """Send log message to configured channel"""
@@ -67,48 +81,41 @@ class LoggingService:
             LogLevel.ERROR: discord.Color.red()
         }.get(level, discord.Color.default())
 
-    async def log_debug(self, message: str, guild_id: Optional[int] = None):
+    async def log_debug(self, message: str) -> None:
         """Log debug message"""
-        await self._send_log(guild_id, LogLevel.DEBUG, message)
+        self.logger.debug(message)
+        await self._log_to_discord("DEBUG", message)
 
-    async def log_info(self, message: str, guild_id: Optional[int] = None):
+    async def log_info(self, message: str) -> None:
         """Log info message"""
-        try:
-            logger.info(message)
-            
-            if guild_id:
-                # Możesz dodać tutaj dodatkową logikę logowania do bazy danych
-                pass
-                
-        except Exception as e:
-            logger.error(f"Error in logging service: {str(e)}\nMessage: {message}")
+        self.logger.info(message)
+        await self._log_to_discord("INFO", message)
 
-    async def log_warning(self, message: str, guild_id: Optional[int] = None):
+    async def log_warning(self, message: str) -> None:
         """Log warning message"""
-        try:
-            logger.warning(message)
-            
-            if guild_id:
-                # Możesz dodać tutaj dodatkową logikę logowania do bazy danych
-                pass
-                
-        except Exception as e:
-            logger.error(f"Error in logging service: {str(e)}\nMessage: {message}")
+        self.logger.warning(message)
+        await self._log_to_discord("WARNING", message)
 
-    async def log_error(self, error: Exception, message: str, guild_id: Optional[int] = None):
-        """Log error message"""
-        try:
-            error_message = f"{message}\nError: {str(error)}"
-            logger.error(error_message)
-            
-            if guild_id:
-                # Możesz dodać tutaj dodatkową logikę logowania do bazy danych
-                pass
-                
-        except Exception as e:
-            logger.error(f"Error in logging service: {str(e)}\nOriginal error: {str(error)}")
+    async def log_error(self, error: Union[Exception, str], context: str = "") -> None:
+        """Log error message with optional context"""
+        error_message = f"{context}: {str(error)}" if context else str(error)
+        self.logger.error(error_message)
+        await self._log_to_discord("ERROR", error_message)
 
     async def log_critical(self, error: Exception, context: str = ""):
         """Log critical error message with context"""
         message = context if context else "A critical error occurred"
-        await self._send_log(None, LogLevel.CRITICAL, message, error) 
+        await self._send_log(None, LogLevel.CRITICAL, message, error)
+
+    async def _log_to_discord(self, level: str, message: str) -> None:
+        """Log message to Discord channel if configured"""
+        if not self.bot or not self.log_channel_id:
+            return
+
+        try:
+            channel = self.bot.get_channel(self.log_channel_id)
+            if channel:
+                timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                await channel.send(f"```\n{timestamp} [{level}] {message}\n```")
+        except Exception as e:
+            self.logger.error(f"Failed to log to Discord: {e}") 

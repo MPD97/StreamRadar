@@ -45,7 +45,7 @@ def setup_add_config_command(bot):
                 return
 
             # Sprawdź czy konfiguracja już istnieje
-            existing_config = await bot.config_service.get_configuration(
+            existing_config = await bot.db_service.get(
                 interaction.guild_id,
                 platform,
                 username
@@ -76,18 +76,29 @@ def setup_add_config_command(bot):
                 'message': message or f"{role.mention} Stream is live!"
             }
 
-            await bot.config_service.save_configuration(config)
-            await bot.notification_service.add_configuration(config)
-            
-            await interaction.followup.send(
-                f"Stream notification configuration added:\n"
-                f"Platform: {platform.capitalize()}\n"
-                f"Streamer: {username}\n"
-                f"Channel: {channel.mention}\n"
-                f"Role: {role.mention}",
-                ephemeral=True
-            )
+            # Zapisz konfigurację w bazie danych
+            if await bot.db_service.save(config):
+                # Rozpocznij monitorowanie
+                await bot.notification_manager.start_monitoring(config)
+                
+                await interaction.followup.send(
+                    f"Stream notification configuration added:\n"
+                    f"Platform: {platform.capitalize()}\n"
+                    f"Streamer: {username}\n"
+                    f"Channel: {channel.mention}\n"
+                    f"Role: {role.mention}",
+                    ephemeral=True
+                )
+            else:
+                await interaction.followup.send(
+                    "Failed to save configuration. Please try again.", 
+                    ephemeral=True
+                )
 
         except Exception as e:
-            await bot.logging_service.log_error(e, "Error adding configuration", interaction.guild_id)
-            await interaction.followup.send("An error occurred while adding the configuration.", ephemeral=True) 
+            error_message = f"Error adding configuration: {str(e)}"
+            await bot.logging_service.log_error(error_message)
+            await interaction.followup.send(
+                "An error occurred while adding the configuration.", 
+                ephemeral=True
+            ) 

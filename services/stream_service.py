@@ -3,14 +3,19 @@ import discord
 from interfaces.service_interface import IStreamService
 from interfaces.repository_interface import IStreamRepository
 from services.logging_service import LoggingService
+from services.config_manager import ConfigManager
 from utils.validators import Validators
 
 class StreamService(IStreamService):
+    """Service for managing stream configurations"""
+
     def __init__(self, repository: IStreamRepository, 
-                 notification_service: Any, logging_service: LoggingService):
+                 logging_service: LoggingService,
+                 config_manager: ConfigManager):
         self.repository = repository
-        self.notification_service = notification_service
         self.logging_service = logging_service
+        self.config_manager = config_manager
+        self.validators = Validators()
 
     async def add_stream(self, ctx: Any, platform: str, profile_url: str,
                         role: discord.Role, message: str) -> bool:

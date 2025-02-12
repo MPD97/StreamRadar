@@ -82,4 +82,76 @@ class EmbedBuilder:
             'youtube': discord.Color.red(),
             'tiktok': discord.Color.dark_theme()
         }
-        return colors.get(platform.lower(), discord.Color.blue()) 
+        return colors.get(platform.lower(), discord.Color.blue())
+
+    @staticmethod
+    def create_stream_notification(config: Dict[str, Any], stream_info: Dict[str, Any]) -> discord.Embed:
+        """Create stream notification embed"""
+        embed = discord.Embed(
+            title=f"🔴 {config['username']} is now live!",
+            url=config['profile_url'],
+            color=0x6441A4 if config['platform'] == 'twitch' else 0x000000
+        )
+
+        if config['platform'] == 'twitch':
+            embed.add_field(
+                name="Stream Title", 
+                value=stream_info.get('title', 'No title'),
+                inline=False
+            )
+            embed.add_field(
+                name="Playing", 
+                value=stream_info.get('game_name', 'No game'),
+                inline=True
+            )
+            embed.add_field(
+                name="Viewers", 
+                value=str(stream_info.get('viewer_count', 0)),
+                inline=True
+            )
+            if thumbnail_url := stream_info.get('thumbnail_url'):
+                embed.set_thumbnail(url=thumbnail_url)
+
+        return embed
+
+    @staticmethod
+    def create_status_embed(configs: list, permission_info: str, has_configs: bool) -> discord.Embed:
+        """Create status embed"""
+        if not has_configs:
+            embed = discord.Embed(
+                title="Stream Notifications Status",
+                description="No active stream notifications configured.",
+                color=0x808080
+            )
+            embed.add_field(
+                name="Bot Permissions",
+                value=permission_info,
+                inline=False
+            )
+            return embed
+
+        embed = discord.Embed(
+            title="Stream Notifications Status",
+            color=0x00FF00
+        )
+
+        for config in configs:
+            status = "🟢 Active" if config.get('is_active', True) else "🔴 Inactive"
+            live_status = "🔴 Live" if config.get('is_live', False) else "⚫ Offline"
+            
+            embed.add_field(
+                name=f"{config['platform'].capitalize()} - {config['username']}",
+                value=f"Channel: <#{config['channel_id']}>\n"
+                      f"Role: <@&{config['role_id']}>\n"
+                      f"Status: {status}\n"
+                      f"Stream: {live_status}",
+                inline=True
+            )
+
+        embed.add_field(
+            name="Bot Permissions",
+            value=permission_info,
+            inline=False
+        )
+
+        return embed 

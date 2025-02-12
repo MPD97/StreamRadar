@@ -136,7 +136,7 @@ class NotificationService():
             try:
                 status.last_check = datetime.now()
                 check_result = await platform.is_stream_live(config['profile_url'])
-                
+                print(f"[BUG] check_result: {check_result}")
                 if isinstance(check_result, dict):
                     is_live = check_result.get('is_live', False)
                     error = check_result.get('error')
@@ -630,7 +630,7 @@ class NotificationService():
             try:
                 # Użyj profile_url zamiast samego username
                 status = await platform_service.is_stream_live(profile_url)
-                
+                print(f"[BUG2] status: {status}")
                 # Sprawdź czy mamy do czynienia ze słownikiem czy wartością boolean
                 if isinstance(status, dict):
                     is_live = status.get('is_live', False)

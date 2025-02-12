@@ -26,16 +26,21 @@ def setup_status_command(bot):
                 return
 
             _, permission_info = PermissionChecker.check_permissions(guild.me, interaction.channel)
-            configs = await bot.config_service.get_server_configurations(interaction.guild_id)
+            configs = await bot.db_service.get_all()
             
-            embed = StatusEmbed.create(configs, permission_info, bool(configs))
+            server_configs = [
+                config for config in configs 
+                if config['guild_id'] == interaction.guild_id
+            ]
             
-            if configs:
-                view = StatusView(configs, bot)
+            embed = StatusEmbed.create(server_configs, permission_info, bool(server_configs))
+            
+            if server_configs:
+                view = StatusView(server_configs, bot)
                 await interaction.followup.send(embed=embed, view=view, ephemeral=True)
             else:
                 await interaction.followup.send(embed=embed, ephemeral=True)
 
         except Exception as e:
-            await bot.logging_service.log_error(e, "Error showing status", interaction.guild_id)
+            await bot.logging_service.log_error(str(e), "Error showing status")
             await interaction.followup.send("An error occurred while getting status.", ephemeral=True) 
