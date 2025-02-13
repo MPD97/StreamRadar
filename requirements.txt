@@ -1,4 +1,6 @@
 discord.py>=2.0.0
 python-dotenv
 aiohttp
-aiosqlite 
+aiosqlite
+selenium
+webdriver-manager

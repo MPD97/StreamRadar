@@ -13,16 +13,13 @@ class TikTokPlatform(BasePlatform):
     def __init__(self, config_service):
         self.config_service = config_service
         self.session = None
-        self.last_check = {}
-        self.check_interval = 30
-        self.cache = {}
-        self.cache_duration = 15  # seconds
         self.base_check_url = "https://webcast.tiktok.com/webcast/room/check_alive/"
         self.room_id_cache = {}  # Cache for room IDs
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
-            'Accept': 'application/json',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
             'Accept-Language': 'pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Connection': 'keep-alive'
         }
         self.max_retries = 10
         self.retry_delay = 1
@@ -65,18 +62,11 @@ class TikTokPlatform(BasePlatform):
             await self.ensure_session()
             
             print(f"[TikTok] Getting room ID for username: {username}")
-            
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-                'Accept-Language': 'pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7',
-                'Connection': 'keep-alive'
-            }
 
             url = f'https://www.tiktok.com/@{username}/live'
             print(f"[TikTok] Fetching live page: {url}")
 
-            async with self.session.get(url, headers=headers, timeout=10) as response:
+            async with self.session.get(url, headers=self.headers, timeout=10) as response:
                 if response.status == 200:
                     text = await response.text()
                     

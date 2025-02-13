@@ -47,6 +47,24 @@ class UsernameValidator:
         return True, "Valid username"
 
     @staticmethod
+    def validate_kick_username(username: str) -> Tuple[bool, str]:
+        """
+        Validate Kick username according to Kick rules:
+        - Length between 3 and 20 characters
+        - Only letters, numbers, and underscores
+        """
+        username = username.lower()
+        
+        if not 3 <= len(username) <= 20:
+            return False, "Kick username must be between 3 and 20 characters long"
+        
+        if not re.match(r'^[a-zA-Z0-9_]*$', username):
+            return False, "Kick username can only contain letters, numbers, and underscores"
+        
+        return True, "Valid username"
+
+
+    @staticmethod
     def validate_username(platform: str, username: str) -> Tuple[bool, str]:
         """Validate username based on platform"""
         platform = platform.lower()
@@ -54,6 +72,8 @@ class UsernameValidator:
             return UsernameValidator.validate_twitch_username(username)
         elif platform == 'tiktok':
             return UsernameValidator.validate_tiktok_username(username)
+        elif platform == 'kick':
+            return UsernameValidator.validate_kick_username(username)
         else:
             return False, f"Unsupported platform: {platform}"
 

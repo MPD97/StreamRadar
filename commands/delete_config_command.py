@@ -10,12 +10,12 @@ def setup_delete_config_command(bot):
         description="Delete a stream notification configuration"
     )
     @app_commands.describe(
-        platform="Stream platform (twitch/tiktok)",
+        platform="Stream platform (twitch/tiktok/kick)",
         username="Streamer's username to delete configuration for"
     )
     async def delete_configuration(
         interaction: Interaction,
-        platform: Literal['twitch', 'tiktok'],
+        platform: Literal['twitch', 'tiktok', 'kick'],
         username: str
     ):
         try:

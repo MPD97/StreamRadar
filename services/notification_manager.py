@@ -7,6 +7,7 @@ from services.config_manager import ConfigManager
 from utils.embed_builder import EmbedBuilder
 from platforms.twitch_platform import TwitchPlatform
 from platforms.tiktok_platform import TikTokPlatform
+from platforms.kick_platform import KickPlatform
 
 class NotificationManager:
     """Manages stream notifications and status checking"""
@@ -25,7 +26,8 @@ class NotificationManager:
         # Initialize platforms
         self.platforms = {
             'twitch': TwitchPlatform(config_service),
-            'tiktok': TikTokPlatform(config_service)
+            'tiktok': TikTokPlatform(config_service),
+            'kick': KickPlatform(config_service)
         }
 
     async def start_all_monitoring(self) -> None:
@@ -37,16 +39,16 @@ class NotificationManager:
         try:
             configs = await self.repository.get_all()
             if not configs:
-                await self.logging_service.log_info("No active stream configurations found")
+                await self.logging_service.log_info("[NotificationManager] No active stream configurations found")
                 return
 
-            await self.logging_service.log_info(f"Starting monitoring for {len(configs)} streams")
+            await self.logging_service.log_info(f"[NotificationManager] Starting monitoring for {len(configs)} streams")
             for config in configs:
                 if config.get('is_active', True):  # Only monitor active configurations
                     await self.start_monitoring(config)
                     
         except Exception as e:
-            await self.logging_service.log_error(e, "Error starting stream monitoring")
+            await self.logging_service.log_error(e, "[NotificationManager] Error starting stream monitoring")
             self._is_running = False
 
     async def stop_all_monitoring(self) -> None:
@@ -58,11 +60,11 @@ class NotificationManager:
         try:
             configs = await self.repository.get_all()
             if configs:
-                await self.logging_service.log_info(f"Stopping monitoring for {len(configs)} streams")
+                await self.logging_service.log_info(f"[NotificationManager] Stopping monitoring for {len(configs)} streams")
                 for config in configs:
                     await self.stop_monitoring(config)
         except Exception as e:
-            await self.logging_service.log_error(e, "Error stopping stream monitoring")
+            await self.logging_service.log_error(e, "[NotificationManager] Error stopping stream monitoring")
 
     async def start_monitoring(self, config: Dict[str, Any]) -> None:
         """Start monitoring a stream"""
@@ -70,21 +72,21 @@ class NotificationManager:
         if key not in self.active_checks:
             self.active_checks[key] = True
             asyncio.create_task(self._check_stream_loop(config))
-            await self.logging_service.log_info(f"Started monitoring: {config['profile_url']}")
+            await self.logging_service.log_info(f"[NotificationManager] Started monitoring: {config['profile_url']}")
 
     async def stop_monitoring(self, config: Dict[str, Any]) -> None:
         """Stop monitoring a stream"""
         key = self._get_stream_key(config)
         if key in self.active_checks:
             self.active_checks[key] = False
-            await self.logging_service.log_info(f"Stopped monitoring: {config['profile_url']}")
+            await self.logging_service.log_info(f"[NotificationManager] Stopped monitoring: {config['profile_url']}")
 
     async def send_notification(self, config: Dict[str, Any], stream_info: Dict[str, Any]) -> None:
         """Send stream notification"""
         try:
             channel = self.bot.get_channel(config['channel_id'])
             if not channel:
-                await self.logging_service.log_error(f"Channel not found: {config['channel_id']}")
+                await self.logging_service.log_error(f"[NotificationManager] Channel not found: {config['channel_id']}")
                 return
 
             embed = EmbedBuilder.create_stream_notification(config, stream_info)
@@ -100,14 +102,14 @@ class NotificationManager:
             )
 
         except Exception as e:
-            await self.logging_service.log_error(f"Error sending notification: {str(e)}")
+            await self.logging_service.log_error(f"[NotificationManager] Error sending notification: {str(e)}")
 
     async def check_stream(self, config: Dict[str, Any]) -> None:
         """Check stream status and send notification if needed"""
         try:
             platform = self.platforms.get(config['platform'])
             if not platform:
-                await self.logging_service.log_error(f"Unknown platform: {config['platform']}")
+                await self.logging_service.log_error(f"[NotificationManager] Unknown platform: {config['platform']}")
                 return
 
             is_live, stream_info = await platform.check_stream(config['username'])
@@ -122,7 +124,7 @@ class NotificationManager:
             was_live = stored_config.get('is_live', False) if stored_config else False
 
             if is_live and not was_live:
-                await self.logging_service.log_info(f"Stream went live: {config['profile_url']}")
+                await self.logging_service.log_info(f"[NotificationManager] Stream went live: {config['profile_url']}")
                 await self.send_notification(config, stream_info)
             elif not is_live and was_live:
                 await self.repository.update_status(
@@ -134,7 +136,7 @@ class NotificationManager:
                 )
 
         except Exception as e:
-            await self.logging_service.log_error(f"Error checking stream: {str(e)}")
+            await self.logging_service.log_error(f"[NotificationManager] Error checking stream: {str(e)}")
             await self.repository.update_status(
                     config['guild_id'],
                     config['platform'],
@@ -149,7 +151,6 @@ class NotificationManager:
         
         while self.active_checks.get(key, False):
             try:
-                
                 # Get current status from database
                 stored_config = await self.repository.get(
                     config['guild_id'],
@@ -163,7 +164,7 @@ class NotificationManager:
 
                 if current_status and not was_live:
                     await self.logging_service.log_info(
-                        f"Stream went live: {config['profile_url']}"
+                        f"[NotificationManager] Stream went live: {config['profile_url']}"
                     )
                     await self.send_notification(config, status_result)
                 
@@ -176,7 +177,7 @@ class NotificationManager:
                 )
 
             except Exception as e:
-                await self.logging_service.log_error(e, f"Error checking stream: {config['profile_url']}")
+                await self.logging_service.log_error(e, f"[NotificationManager] Error checking stream: {config['profile_url']}")
                 await self.repository.update_status(
                     config['guild_id'],
                     config['platform'],
@@ -191,12 +192,12 @@ class NotificationManager:
         """Check current stream status"""
         platform = self.platforms.get(config['platform'].lower())
         if not platform:
-            raise ValueError(f"Unsupported platform: {config['platform']}")
+            raise ValueError(f"Unsupported platform: {config['platform']}. Supported platforms: {', '.join(self.platforms.keys())}")
 
         status = await platform.is_stream_live(config['profile_url'])
         
         await self.logging_service.log_debug(
-            f"Stream check result for {config['profile_url']}: {'Live' if status else 'Offline'}"
+            f"[NotificationManager] Stream check result for {config['profile_url']}: {'Live' if status else 'Offline'}"
         )
         
         return status

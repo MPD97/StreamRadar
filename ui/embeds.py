@@ -27,7 +27,7 @@ class StatusEmbed:
 
     @staticmethod
     def _add_config_field(embed: Embed, config: Dict[str, Any]):
-        status_emoji = "🟢" if config['is_active'] else "🔴"
+        status_emoji = "✅" if config['is_active'] else "❌"
         live_status = "🎥 Live" if config.get('is_live') else "⭕ Offline"
         
         last_check = StatusEmbed._format_last_check(config.get('last_check'))

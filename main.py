@@ -74,10 +74,10 @@ class NotificationBot(commands.Bot):
                 check_interval=self.config.get('check_interval', 60)
             )
             
-            logger.info("Services initialized successfully")
+            logger.info("[Main] Services initialized successfully")
 
         except Exception as e:
-            logger.error(f"Error initializing services: {e}")
+            logger.error(f"[Main] Error initializing services: {e}")
             raise
 
     async def setup_hook(self) -> None:
@@ -85,22 +85,26 @@ class NotificationBot(commands.Bot):
         try:
             # Initialize database
             await self.db_service.initialize()
-            logger.info("Database initialized successfully")
+            logger.info("[Main] Database initialized successfully")
             
             # Setup commands
             setup_add_config_command(self)
             setup_delete_config_command(self)
             setup_status_command(self)
-            logger.info("Commands setup completed")
+            logger.info("[Main] Commands setup completed")
 
+            # Sync commands with Discord
+            await self.tree.sync()
+            logger.info("[Main] Commands synced successfully")
+            
             # Start notification service
             await self.notification_manager.start_all_monitoring()
-            logger.info("Notification service started")
+            logger.info("[Main] Notification service started")
             
-            logger.info("Bot setup completed successfully")
+            logger.info("[Main] Bot setup completed successfully")
 
         except Exception as e:
-            logger.error(f"Error in setup hook: {e}")
+            logger.error(f"[Main] Error in setup hook: {e}")
             raise
 
     async def close(self) -> None:
@@ -109,18 +113,18 @@ class NotificationBot(commands.Bot):
             # Stop notification service
             if hasattr(self, 'notification_manager'):
                 await self.notification_manager.stop_all_monitoring()
-                logger.info("Notification service stopped")
+                logger.info("[Main] Notification service stopped")
 
             # Close database connection
             if hasattr(self, 'db_service'):
                 await self.db_service.close()
-                logger.info("Database connection closed")
+                logger.info("[Main] Database connection closed")
 
             await super().close()
-            logger.info("Bot shutdown completed successfully")
+            logger.info("[Main] Bot shutdown completed successfully")
 
         except Exception as e:
-            logger.error(f"Error during shutdown: {e}")
+            logger.error(f"[Main] Error during shutdown: {e}")
             raise
 
 async def run_bot_async():
@@ -135,14 +139,14 @@ async def run_bot_async():
         }
 
         if not config['token']:
-            raise ValueError("Discord token not found in environment variables")
+            raise ValueError("[Main] Discord token not found in environment variables")
 
         bot = NotificationBot(config)
         async with bot:
             await bot.start(config['token'])
 
     except Exception as e:
-        logger.error(f"Unexpected error: {e}")
+        logger.error(f"[Main] Unexpected error: {e}")
         raise
 
 def run_bot():
@@ -150,9 +154,9 @@ def run_bot():
     try:
         asyncio.run(run_bot_async())
     except KeyboardInterrupt:
-        logger.info("Bot stopped by user")
+        logger.info("[Main] Bot stopped by user")
     except Exception as e:
-        logger.error(f"Fatal error: {e}")
+        logger.error(f"[Main] Fatal error: {e}")
         raise
 
 if __name__ == "__main__":

@@ -11,15 +11,15 @@ def setup_add_config_command(bot):
         description="Add a new stream notification configuration"
     )
     @app_commands.describe(
-        platform="Stream platform (twitch/tiktok)",
+        platform="Stream platform (twitch/tiktok/kick)",
         username="Streamer's username (without @ for TikTok)",
         channel="Channel for notifications",
-        role="Role to mention",
+        role="Role to mention when stream is live",
         message="Custom notification message"
     )
     async def add_configuration(
         interaction: Interaction,
-        platform: Literal['twitch', 'tiktok'],
+        platform: Literal['twitch', 'tiktok', 'kick'],
         username: str,
         channel: TextChannel,
         role: Role,
@@ -33,7 +33,7 @@ def setup_add_config_command(bot):
                 return
 
             platform = platform.lower()
-            username = username.strip('@')  # Usuń @ jeśli zostało dodane
+            username = username.lower().strip('@')  # Usuń @ jeśli zostało dodane
 
             # Walidacja username
             is_valid, validation_message = UsernameValidator.validate_username(platform, username)
@@ -61,6 +61,8 @@ def setup_add_config_command(bot):
             # Konstruowanie URL na podstawie platformy
             if platform == 'twitch':
                 profile_url = f"https://twitch.tv/{username}"
+            elif platform == 'kick':
+                profile_url = f"https://kick.com/{username}"
             else:  # tiktok
                 profile_url = f"https://tiktok.com/@{username}"
 

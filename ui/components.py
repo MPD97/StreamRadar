@@ -16,7 +16,6 @@ class DeleteConfigButton(ui.Button):
         try:
             await interaction.response.defer(ephemeral=True)
 
-            # Użyj db_service zamiast config_service
             deleted = await self.bot.db_service.delete(
                 self.config['guild_id'],
                 self.config['platform'],

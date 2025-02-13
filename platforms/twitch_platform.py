@@ -25,6 +25,46 @@ class TwitchPlatform(BasePlatform):
         """Initialize the platform"""
         self.session = aiohttp.ClientSession()
 
+
+    async def is_stream_live(self, profile_url: str) -> Dict[str, Any]:
+        """Check if stream is live"""
+        try:
+
+            username = self._extract_username(profile_url)
+            if not username:
+                return {
+                    'is_live': False,
+                    'error': f'Invalid Twitch URL: {profile_url}'
+                }
+
+            user_data = await self._get_user_data(username)
+            if not user_data:
+                return {
+                    'is_live': False,
+                    'error': f'User not found: {username}'
+                }
+
+            stream_data = await self._get_stream_data(user_data['id'])
+            
+            is_live = bool(stream_data)
+            print(f"[Twitch] Check result for {username}: {'Live' if is_live else 'Offline'}")
+            
+            return {
+                'is_live': is_live,
+                'user_id': user_data['id'],
+                'username': username,
+                'timestamp': datetime.now().isoformat()
+            }
+
+        except Exception as e:
+            print(f"[Twitch] Error checking {profile_url}: {str(e)}")
+            return {
+                'is_live': False,
+                'error': str(e),
+                'username': username if 'username' in locals() else None,
+                'timestamp': datetime.now().isoformat()
+            } 
+
     async def cleanup(self):
         """Cleanup resources"""
         if self.session and not self.session.closed:
@@ -93,41 +133,3 @@ class TwitchPlatform(BasePlatform):
                 return streams[0] if streams else None
             else:
                 raise Exception(f"Twitch API error: {response.status}")
-
-    async def is_stream_live(self, profile_url: str) -> Dict[str, Any]:
-        """Check if stream is live"""
-        try:
-            username = self._extract_username(profile_url)
-            if not username:
-                return {
-                    'is_live': False,
-                    'error': f'Invalid Twitch URL: {profile_url}'
-                }
-
-            user_data = await self._get_user_data(username)
-            if not user_data:
-                return {
-                    'is_live': False,
-                    'error': f'User not found: {username}'
-                }
-
-            stream_data = await self._get_stream_data(user_data['id'])
-            
-            is_live = bool(stream_data)
-            print(f"[Twitch] Check result for {username}: {'Live' if is_live else 'Offline'}")
-            
-            return {
-                'is_live': is_live,
-                'user_id': user_data['id'],
-                'username': username,
-                'timestamp': datetime.now().isoformat()
-            }
-
-        except Exception as e:
-            print(f"[Twitch] Error checking {profile_url}: {str(e)}")
-            return {
-                'is_live': False,
-                'error': str(e),
-                'username': username if 'username' in locals() else None,
-                'timestamp': datetime.now().isoformat()
-            } 
