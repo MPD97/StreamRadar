@@ -1,5 +1,6 @@
 # Discord API
 discord.py>=2.0.0
+gunicorn
 
 # HTTP i async
 aiohttp>=3.8.0
