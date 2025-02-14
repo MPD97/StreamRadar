@@ -1,9 +1,7 @@
 import aiohttp
 from bs4 import BeautifulSoup
 from .base_platform import BasePlatform
-import asyncio
 import re
-import json
 from typing import Optional, Dict, Any
 from datetime import datetime
 import urllib.parse

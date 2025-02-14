@@ -1,6 +1,32 @@
+# Discord API
 discord.py>=2.0.0
-python-dotenv
-aiohttp
-aiosqlite
-selenium
-webdriver-manager
+
+# HTTP i async
+aiohttp>=3.8.0
+requests>=2.31.0
+
+# Baza danych
+aiosqlite>=0.19.0
+
+# Web scraping i parsowanie
+beautifulsoup4>=4.12.0
+selenium>=4.15.0
+webdriver-manager>=4.0.0
+
+# Zmienne środowiskowe
+python-dotenv>=1.0.0
+
+# Formatowanie i parsowanie dat
+python-dateutil>=2.8.2
+
+# Obsługa JSON
+ujson>=5.8.0
+
+# Logowanie i debugowanie
+colorlog>=6.7.0
+
+# Asynchroniczne operacje
+asyncio>=3.4.3
+
+# Typing (opcjonalne, wbudowane w Python 3.7+)
+typing-extensions>=4.8.0
